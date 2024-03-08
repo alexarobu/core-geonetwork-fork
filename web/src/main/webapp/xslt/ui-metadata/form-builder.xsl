@@ -419,7 +419,12 @@
       </legend>
 
       <xsl:if test="count($attributesSnippet/*) > 0 and name($attributesSnippet/*[1]) != 'null'">
-        <div class="well well-sm gn-attr {if ($isDisplayingAttributes = true()) then '' else 'hidden'}">
+
+        <xsl:variable name="hasOnlyAttributes"
+                      select="count(*[namespace-uri() != 'http://www.fao.org/geonetwork']) = 0
+                              and count(@*) > 0"/>
+        <div class="well well-sm gn-attr {if ($isDisplayingAttributes = true() or $hasOnlyAttributes)
+                                          then '' else 'hidden'}">
           <xsl:copy-of select="$attributesSnippet"/>
         </div>
       </xsl:if>
@@ -537,8 +542,9 @@
               </xsl:when>
               <xsl:otherwise>
 
-                <xsl:variable name="hasMultipleChoice"
-                              select="count($template/snippet) gt 1"/>
+                <xsl:variable name="snippets" select="$template/snippet|$editorConfig/editor/snippets/list[@name = $template/snippets/@name]/snippet"/>
+
+                <xsl:variable name="hasMultipleChoice" select="count($snippets) gt 1"/>
 
                 <div class="btn-group" data-gn-template-field-add-button="{$id}">
                   <xsl:if test="$hasMultipleChoice">
@@ -565,7 +571,7 @@
                   <xsl:if test="$hasMultipleChoice">
                     <!-- A combo with the list of snippet available -->
                     <ul class="dropdown-menu">
-                      <xsl:for-each select="$template/snippet">
+                      <xsl:for-each select="$snippets">
                         <xsl:variable name="label" select="@label"/>
                         <li><a id="{concat($id, $label)}">
                           <xsl:value-of select="if ($strings/*[name() = $label] != '') then $strings/*[name() = $label] else $label"/>
@@ -787,14 +793,14 @@
                 <input class="gn-debug" type="text" name="{$xpathFieldId}" value="{@xpath}"/>
               </xsl:if>
 
-              <xsl:variable name="hasMultipleChoice"
-                            select="count($template/snippet) gt 1"/>
+              <xsl:variable name="snippets" select="$template/snippet|$editorConfig/editor/snippets/list[@name = $template/snippets/@name]/snippet"/>
+
+              <xsl:variable name="hasMultipleChoice" select="count($snippets) gt 1"/>
 
               <xsl:if test="$hasMultipleChoice">
-                <xsl:for-each select="$template/snippet">
+                <xsl:for-each select="$snippets">
                   <textarea id="{concat($id, @label, '-value')}">
-                    <xsl:value-of select="saxon:serialize(*,
-                                        'default-serialize-mode')"/>
+                    <xsl:value-of select="saxon:serialize(*, 'default-serialize-mode')"/>
                   </textarea>
                 </xsl:for-each>
               </xsl:if>
@@ -808,8 +814,7 @@
                 <xsl:if test="$isMissingLabel != ''">
                   <xsl:attribute name="data-not-set-check" select="$tagId"/>
                 </xsl:if>
-                <xsl:value-of select="saxon:serialize($template/snippet[1]/*,
-                                      'default-serialize-mode')"/>
+                <xsl:value-of select="saxon:serialize($snippets[1]/*, 'default-serialize-mode')"/>
               </textarea>
             </div>
           </xsl:if>
@@ -888,10 +893,8 @@
         data-gn-field-highlight="">
         <label class="col-sm-2 control-label"
                data-gn-field-tooltip="{$schema}|{$qualifiedName}|{$parentName}|">
-          <xsl:if test="normalize-space($label) != ''">
-            <xsl:value-of select="$label"/>
-          </xsl:if>
-          &#160;
+          <xsl:value-of select="if (normalize-space($label) != '')
+                                then $label else '&#160;'"/>
         </label>
         <div class="col-sm-9">
 
@@ -1236,7 +1239,7 @@
 
               <xsl:attribute name="{$type}">
                 <xsl:value-of
-                  select="."/>
+                  select="normalize-space($valueToEdit)"/>
               </xsl:attribute>
 
               <xsl:if test="$directiveAttributes instance of node()+">
@@ -1662,12 +1665,13 @@
     <xsl:param name="type"/>
     <xsl:param name="options"/>
     <xsl:param name="label"/>
+    <xsl:param name="btnClass" required="no"/>
 
     <div class="row form-group gn-field gn-extra-field">
       <div class="col-xs-10 col-xs-offset-2">
         <a class="btn gn-associated-resource-btn"
            data-ng-click="gnOnlinesrc.onOpenPopup('{$type}'{if ($options != '') then concat(', ''', $options, '''') else ''})">
-          <i class="fa gn-icon-{$type}"></i>&#160;
+          <i class="fa {if ($btnClass != '') then $btnClass else concat('gn-icon-', $type)}"></i>&#160;
           <span data-translate="">
             <xsl:choose>
               <xsl:when test="$label">

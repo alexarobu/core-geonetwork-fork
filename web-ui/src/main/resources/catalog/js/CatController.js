@@ -31,6 +31,7 @@
   goog.require("gn_search_manager");
   goog.require("gn_session_service");
   goog.require("gn_alert");
+  goog.require("gn_es");
 
   var module = angular.module("gn_cat_controller", [
     "gn_search_manager",
@@ -39,7 +40,8 @@
     "gn_saved_selections",
     "gn_external_viewer",
     "gn_history",
-    "gn_alert"
+    "gn_alert",
+    "gn_es"
   ]);
 
   module.constant("gnSearchSettings", {});
@@ -74,26 +76,39 @@
           footer: {
             enabled: true,
             showSocialBarInFooter: true,
-            showApplicationInfoAndLinksInFooter: true
+            showApplicationInfoAndLinksInFooter: true,
+            footerCustomMenu: [], // List of static pages identifiers to display
+            rssFeeds: [
+              {
+                // List of rss feeds links to display when the OGC API Records service is enabled
+                url: "f=rss&sortby=-createDate&limit=30",
+                label: "lastCreatedRecords"
+              }
+              // , {
+              //   url: "f=rss&sortby=-publicationDateForResource&limit=30",
+              //   label: "lastPublishedRecords"
+              // }
+            ]
           },
           header: {
             enabled: true,
             languages: {
               eng: "en",
-              dut: "nl",
-              fre: "fr",
-              ger: "de",
-              kor: "ko",
-              spa: "es",
-              cze: "cs",
               cat: "ca",
-              fin: "fi",
+              chi: "zh",
+              cze: "cs",
+              dan: "da",
+              ger: "de",
+              fre: "fr",
+              spa: "es",
               ice: "is",
               ita: "it",
+              dut: "nl",
+              kor: "ko",
               por: "pt",
               rus: "ru",
-              chi: "zh",
               slo: "sk",
+              fin: "fi",
               swe: "sv"
             },
             isLogoInHeader: false,
@@ -101,8 +116,8 @@
             fluidHeaderLayout: true,
             showGNName: true,
             isHeaderFixed: false,
-            isMenubarAccessible: true,
-            showPortalSwitcher: true
+            showPortalSwitcher: true,
+            topCustomMenu: [] // List of static pages identifiers to display
           },
           cookieWarning: {
             enabled: true,
@@ -127,7 +142,8 @@
                     type: "icon",
                     prefix: "fa fa-2x pull-left gn-icon iti-",
                     expression: "http://inspire.ec.europa.eu/theme/(.*)"
-                  }
+                  },
+                  orderByTranslation: true
                 }
               },
               "cl_topic.key": {
@@ -139,7 +155,8 @@
                   decorator: {
                     type: "icon",
                     prefix: "fa fa-2x pull-left gn-icon-"
-                  }
+                  },
+                  orderByTranslation: true
                 }
               },
               // 'OrgForResource': {
@@ -619,7 +636,7 @@
                 sortOrder: "desc"
               },
               {
-                sortBy: "resourceTitleObject.default.keyword",
+                sortBy: "resourceTitleObject.default.sort",
                 sortOrder: ""
               },
               {
@@ -638,23 +655,30 @@
                   "../../catalog/components/" +
                   "search/resultsview/partials/viewtemplates/grid.html",
                 tooltip: "Grid",
-                icon: "fa-th"
+                icon: "fa-th",
+                related: []
               },
               {
                 tplUrl:
                   "../../catalog/components/" +
                   "search/resultsview/partials/viewtemplates/list.html",
                 tooltip: "List",
-                icon: "fa-bars"
+                icon: "fa-bars",
+                related: ["parent", "children", "services", "datasets"]
               },
               {
                 tplUrl:
                   "../../catalog/components/" +
                   "search/resultsview/partials/viewtemplates/table.html",
                 tooltip: "Table",
-                icon: "fa-table"
+                icon: "fa-table",
+                related: [],
+                source: {
+                  exclude: ["resourceAbstract*", "Org*", "contact*"]
+                }
               }
             ],
+            // Optional. If not set, the first resultViewTpls is used.
             resultTemplate:
               "../../catalog/components/" +
               "search/resultsview/partials/viewtemplates/grid.html",
@@ -710,6 +734,7 @@
                 class: "fa-file-code-o"
               }*/
             ],
+            // Deprecated (use configuration on resultViewTpls)
             grid: {
               related: ["parent", "children", "services", "datasets"]
             },
@@ -730,7 +755,7 @@
               maps: ["ows"]
             },
             isFilterTagsDisplayedInSearch: true,
-            showMapInFacet: false,
+            searchMapPlacement: "results", // results, facets or none
             showStatusFooterFor: "historicalArchive,obsolete,superseded",
             showBatchDropdown: true,
             usersearches: {
@@ -758,6 +783,7 @@
               valuesSeparator: ","
             },
             is3DModeAllowed: false,
+            singleTileWMS: true,
             isSaveMapInCatalogAllowed: true,
             isExportMapAsImageEnabled: false,
             isAccessible: false,
@@ -799,6 +825,8 @@
               syncAllLayers: false,
               drawVector: false
             },
+            defaultTool: "layers",
+            defaultToolAfterMapLoad: "layers",
             graticuleOgcService: {},
             "map-viewer": {
               context: "../../map/config-viewer.xml",
@@ -808,7 +836,8 @@
             "map-search": {
               context: "../../map/config-viewer.xml",
               extent: [0, 0, 0, 0],
-              layers: []
+              layers: [],
+              geodesicExtents: false
             },
             "map-editor": {
               context: "",
@@ -851,32 +880,28 @@
               // 'layout': 'tabset',
               layout: "",
               sections: [
-                // {'types': 'services', 'title': 'Services', 'layout': 'card'},
                 {
-                  types: "onlines",
-                  filter: "protocol:OGC:.*|ESRI:.*|atom.*",
+                  filter:
+                    "protocol:OGC:WMS|OGC:WMTS|ESRI:.*|atom.*|REST|OGC API Maps|OGC API Records",
                   title: "API"
                 },
                 {
-                  types: "onlines",
-                  filter: "protocol:.*DOWNLOAD.*|DB:.*|FILE:.*",
+                  filter:
+                    "protocol:OGC:WFS|OGC:WCS|.*DOWNLOAD.*|DB:.*|FILE:.*|OGC API Features|OGC API Coverages",
                   title: "download"
                 },
-                { types: "onlines", filter: "function:legend", title: "mapLegend" },
+                { filter: "function:legend", title: "mapLegend" },
                 {
-                  types: "onlines",
                   filter: "function:featureCatalogue",
                   title: "featureCatalog"
                 },
                 {
-                  types: "onlines",
                   filter: "function:dataQualityReport",
                   title: "quality"
                 },
                 {
-                  types: "onlines",
                   filter:
-                    "-protocol:OGC:.*|ESRI:.*|atom.*|.*DOWNLOAD.*|DB:.*|FILE:.* AND -function:legend|featureCatalogue|dataQualityReport",
+                    "-protocol:OGC.*|REST|ESRI:.*|atom.*|.*DOWNLOAD.*|DB:.*|FILE:.* AND -function:legend|featureCatalogue|dataQualityReport",
                   title: "links"
                 }
               ]
@@ -1012,7 +1037,7 @@
                     prefix: "fa fa-fw ",
                     map: {
                       false: "fa-lock",
-                      true: "fa-unlock"
+                      true: "fa-lock-open"
                     }
                   }
                 }
@@ -1086,7 +1111,7 @@
                 sortOrder: "desc"
               },
               {
-                sortBy: "resourceTitleObject.default.keyword",
+                sortBy: "resourceTitleObject.default.sort",
                 sortOrder: ""
               },
               {
@@ -1206,7 +1231,7 @@
         requireProxy: [],
         gnCfg: angular.copy(defaultConfig),
         gnUrl: "",
-        docUrl: "https://geonetwork-opensource.org/manuals/4.0.x/{lang}",
+        docUrl: "https://docs.geonetwork-opensource.org/latest/{lang}",
         //docUrl: '../../doc/',
         modelOptions: {
           updateOn: "default blur",
@@ -1291,6 +1316,8 @@
           gnSearchSettings.mapProtocols = {
             layers: [
               "OGC:WMS",
+              "OGC:3DTILES",
+              "OGC:COG",
               "OGC:WMTS",
               "OGC:WMS-1.1.1-http-get-map",
               "OGC:WMS-1.3.0-http-get-map",
@@ -1349,7 +1376,7 @@
               _.set(this.gnCfg, p, o);
             }
             if (runAllChecks) {
-              optionInDefaultConfig = _.get(defaultConfig, p);
+              var optionInDefaultConfig = _.get(defaultConfig, p);
               if (optionInDefaultConfig === undefined) {
                 console.warn(
                   "Path " +
@@ -1385,7 +1412,7 @@
               option = _.get(config, p);
             if (angular.isObject(option) && Object.keys(option).length === 0) {
               var key = pathToken.pop();
-              parent = _.get(config, pathToken.join("."));
+              var parent = _.get(config, pathToken.join("."));
               delete parent[key];
             }
           }
@@ -1396,6 +1423,19 @@
         },
         getProxyUrl: function () {
           return this.proxyUrl;
+        },
+        getDefaultResultTemplate: function () {
+          if (this.gnCfg.mods.search.resultTemplate) {
+            for (var i = 0; i < this.gnCfg.mods.search.resultViewTpls.length; i++) {
+              if (
+                this.gnCfg.mods.search.resultViewTpls[i].tplUrl ==
+                this.gnCfg.mods.search.resultTemplate
+              ) {
+                return this.gnCfg.mods.search.resultViewTpls[i];
+              }
+            }
+          }
+          return this.gnCfg.mods.search.resultViewTpls[0];
         },
         // Removes the proxy path and decodes the layer url,
         // so the layer can be printed with MapFish.
@@ -1464,7 +1504,7 @@
       return angular.isDefined(this.langs[lang]);
     },
     isValidIso2Lang: function (lang) {
-      for (p in this.langs) {
+      for (var p in this.langs) {
         if (this.langs[p] === lang) {
           return true;
         }
@@ -1475,7 +1515,7 @@
       return this.langs[iso3lang] || "en";
     },
     getIso3Lang: function (iso2lang) {
-      for (p in this.langs) {
+      for (var p in this.langs) {
         if (this.langs[p] === iso2lang) {
           return p;
         }
@@ -1513,6 +1553,7 @@
     "$cookies",
     "gnExternalViewer",
     "gnAlertService",
+    "gnESFacet",
     function (
       $scope,
       $http,
@@ -1532,19 +1573,19 @@
       gnSearchSettings,
       $cookies,
       gnExternalViewer,
-      gnAlertService
+      gnAlertService,
+      gnESFacet
     ) {
       $scope.version = "0.0.1";
       var defaultNode = "srv";
 
       // Links for social media
       $scope.socialMediaLink = $location.absUrl();
-      $scope.getPermalink = gnUtilityService.getPermalink;
+      $scope.getPermalink = gnUtilityService.displayPermalink;
       $scope.fluidEditorLayout = gnGlobalSettings.gnCfg.mods.editor.fluidEditorLayout;
       $scope.fluidHeaderLayout = gnGlobalSettings.gnCfg.mods.header.fluidHeaderLayout;
       $scope.showGNName = gnGlobalSettings.gnCfg.mods.header.showGNName;
       $scope.isHeaderFixed = gnGlobalSettings.gnCfg.mods.header.isHeaderFixed;
-      $scope.isMenubarAccessible = gnGlobalSettings.gnCfg.mods.header.isMenubarAccessible;
       $scope.isLogoInHeader = gnGlobalSettings.gnCfg.mods.header.isLogoInHeader;
       $scope.isFooterEnabled = gnGlobalSettings.gnCfg.mods.footer.enabled;
 
@@ -1552,6 +1593,8 @@
       $scope.langs = gnGlobalSettings.gnCfg.mods.header.languages;
       $scope.lang = gnLangs.detectLang(null, gnGlobalSettings);
       $scope.iso2lang = gnLangs.getIso2Lang($scope.lang);
+
+      $scope.rssFeeds = gnGlobalSettings.gnCfg.mods.footer.rssFeeds;
 
       $scope.getSocialLinksVisible = function () {
         var onMdView = $location.absUrl().indexOf("/metadata/") > -1;
@@ -1628,7 +1671,8 @@
         rus: "русский",
         chi: "中文",
         slo: "Slovenčina",
-        swe: "Svenska"
+        swe: "Svenska",
+        dan: "Dansk"
       };
       $scope.url = "";
       $scope.gnUrl = gnGlobalSettings.gnUrl;
@@ -1643,6 +1687,11 @@
       $scope.isUserGroupUpdateEnabled = gnGlobalSettings.isUserGroupUpdateEnabled;
       $scope.isExternalViewerEnabled = gnExternalViewer.isEnabled();
       $scope.externalViewerUrl = gnExternalViewer.getBaseUrl();
+      $scope.publicationOptions = [];
+
+      $http.get("../api/records/sharing/options").then(function (response) {
+        $scope.publicationOptions = response.data;
+      });
 
       $scope.isSelfRegisterPossible = function () {
         return gnConfig["system.userSelfRegistration.enable"];
@@ -1803,6 +1852,14 @@
                   : "";
             return angular.isFunction(this[fnName]) ? this[fnName]() : false;
           },
+          canBatchEditMetadata: function () {
+            var profile = gnConfig["metadata.batchediting.accesslevel"] || "Editor",
+              fnName =
+                profile !== ""
+                  ? "is" + profile[0].toUpperCase() + profile.substring(1) + "OrMore"
+                  : "";
+            return angular.isFunction(this[fnName]) ? this[fnName]() : false;
+          },
           canDeletePublishedMetadata: function () {
             var profile =
                 gnConfig["metadata.delete.profilePublishedMetadata"] || "Editor",
@@ -1913,6 +1970,15 @@
             });
         });
 
+        // Retrieve the publication options
+        userLogin.then(function (value) {
+          if ($scope.user && $scope.user.isReviewerOrMore()) {
+            $http.get("../api/records/sharing/options").then(function (response) {
+              $scope.publicationOptions = response.data;
+            });
+          }
+        });
+
         // Retrieve main search information
         var searchInfo = userLogin.then(function (value) {
           // Check index status.
@@ -1946,7 +2012,8 @@
                 .then(function (r) {
                   $scope.searchInfo = r.data;
                   var keys = Object.keys(gnGlobalSettings.gnCfg.mods.home.facetConfig);
-                  selectedFacet = keys[0];
+                  var selectedFacet = keys[0];
+
                   for (var i = 0; i < keys.length; i++) {
                     if (
                       $scope.searchInfo.aggregations[keys[i]].buckets.length > 0 ||
@@ -1960,7 +2027,13 @@
                     list: keys,
                     key: selectedFacet,
                     lastKey: keys.length > 1 ? keys[keys.length - 1] : undefined,
-                    config: gnGlobalSettings.gnCfg.mods.home.facetConfig
+                    config: gnGlobalSettings.gnCfg.mods.home.facetConfig,
+                    facets: gnESFacet.createFacetModel(
+                      gnGlobalSettings.gnCfg.mods.home.facetConfig,
+                      r.data.aggregations,
+                      undefined,
+                      undefined
+                    )
                   };
                 });
             }
@@ -1975,6 +2048,74 @@
 
       $scope.allowPublishInvalidMd = function () {
         return gnConfig["metadata.workflow.allowPublishInvalidMd"];
+      };
+
+      $scope.allowPublishNonApprovedMd = function () {
+        return gnConfig["metadata.workflow.allowPublishNonApprovedMd"];
+      };
+
+      $scope.getPublicationOptionClass = function (
+        md,
+        user,
+        isMdWorkflowEnable,
+        pubOption
+      ) {
+        var publicationOptionTitle = $scope.getPublicationOptionTitle(
+          md,
+          user,
+          isMdWorkflowEnable,
+          pubOption
+        );
+        switch (publicationOptionTitle) {
+          case "mdnonapprovedcantpublish":
+          case "mdinvalidcantpublish":
+            return "disabled";
+            break;
+          default:
+            return "";
+        }
+      };
+
+      // Function to get the title name to be used when displaying the publish item in the menu
+      $scope.getPublicationOptionTitle = function (
+        md,
+        user,
+        isMdWorkflowEnable,
+        pubOption
+      ) {
+        var publicationOptionTitle = "";
+        if (!md.isPublished(pubOption)) {
+          if (md.isValid()) {
+            publicationOptionTitle = "mdvalid";
+          } else {
+            if (
+              isMdWorkflowEnable &&
+              md.isWorkflowEnabled() &&
+              $scope.allowPublishInvalidMd() === false &&
+              pubOption.name === "default"
+            ) {
+              publicationOptionTitle = "mdinvalidcantpublish";
+            } else {
+              if (!md.hasValidation()) {
+                publicationOptionTitle = "mdnovalidation";
+              } else {
+                publicationOptionTitle = "mdinvalid";
+              }
+            }
+          }
+          // if we are not using a disabled option like mdinvalidcantpublish then check if there is an approval
+          if (
+            publicationOptionTitle != "mdinvalidcantpublish" &&
+            isMdWorkflowEnable &&
+            md.isWorkflowEnabled() &&
+            md.mdStatus != 2 &&
+            $scope.allowPublishNonApprovedMd() === false &&
+            pubOption.name === "default"
+          ) {
+            publicationOptionTitle = "mdnonapprovedcantpublish";
+          }
+        }
+        return publicationOptionTitle;
       };
 
       $scope.$on("StatusUpdated", function (event, status) {
